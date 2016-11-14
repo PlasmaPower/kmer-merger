@@ -60,7 +60,7 @@ fn main() {
     if infilenames.is_empty() {
         panic!("No input files specified (as arguments)");
     }
-    println!("{}", infilenames.join("\t"));
+    println!("Kmer\t{}", infilenames.join("\t"));
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
