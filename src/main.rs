@@ -147,14 +147,13 @@ fn main() {
             }
         }
         stdout.write(least_kmer.kmer.as_slice()).unwrap();
-        stdout.write(b"\t").unwrap();
-        let mut present_fmt = Vec::with_capacity(least_kmer.present.len() * 2);
+        let mut present_fmt = Vec::with_capacity(least_kmer.present.len() * 2 + 1);
         for p in least_kmer.present.iter().cloned() {
-            present_fmt.push(if p { b'1' } else { b'0' });
             present_fmt.push(b'\t');
+            present_fmt.push(if p { b'1' } else { b'0' });
         }
+        present_fmt.push(b'\n');
         stdout.write(present_fmt.as_slice()).unwrap();
-        stdout.write(b"\n").unwrap();
         least_kmer.kmer.clear();
         least_kmer.present.clear();
     }
