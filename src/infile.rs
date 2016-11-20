@@ -1,7 +1,10 @@
 use std::cmp::Ordering;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::fs::File;
+
+use memchr::memchr;
+use memmap::Mmap;
+use memmap::MmapView;
+
+const NULL_BYTE: &'static u8 = &b'\0';
 
 pub struct PositionInfo {
     pub index: usize,
@@ -9,12 +12,12 @@ pub struct PositionInfo {
 }
 
 pub struct KmerState {
-    pub kmer: Vec<u8>,
+    pub kmer: MmapView,
     pub present: Vec<bool>,
 }
 
 struct ParsedLine {
-    kmer: Vec<u8>,
+    kmer: MmapView,
     present: bool,
 }
 
@@ -35,47 +38,51 @@ impl ParsedLine {
     }
 }
 
-fn parse_line(mut line: Vec<u8>) -> Option<ParsedLine> {
-    // Panics if line.is_empty()
-    let newline = line.pop().unwrap();
-    if newline != b'\n' {
-        line.push(newline); // Oops!
-    }
-    let present_byte = line.pop();
-    let present = if present_byte == Some(b'1') {
-        true
-    } else if present_byte == Some(b'0') {
-        false
-    } else {
-        present_byte.map(|c| line.push(c));
-        error!("Encountered invalid line: \"{}\"",
-               String::from_utf8_lossy(line.as_slice()));
-        return None;
+unsafe fn parse_line(line_view: MmapView) -> Option<ParsedLine> {
+    let (split_at, present) = {
+        let line = line_view.as_slice();
+        let mut bound = line.len();
+        let newline = line.last().unwrap();
+        if newline == &b'\n' {
+            bound -= 1;
+        }
+        bound -= 1;
+        let present_byte = line.get(bound).unwrap_or(&NULL_BYTE);
+        let present = if present_byte == &b'1' {
+            true
+        } else if present_byte == &b'0' {
+            false
+        } else {
+            error!("Encountered invalid line: \"{}\"",
+                   String::from_utf8_lossy(line));
+            return None;
+        };
+        bound -= 1;
+        let separator = line.get(bound).unwrap_or(&NULL_BYTE);
+        if separator != &b' ' && separator != &b'\t' || line.len() == 0 {
+            error!("Encountered invalid line: \"{}\"",
+                   String::from_utf8_lossy(line));
+            return None;
+        }
+        (bound, present)
     };
-    let separator = line.pop();
-    if separator != Some(b' ') && separator != Some(b'\t') || line.len() == 0 {
-        separator.map(|c| line.push(c));
-        present_byte.map(|c| line.push(c));
-        error!("Encountered invalid line: \"{}\"",
-               String::from_utf8_lossy(line.as_slice()));
-        return None;
-    }
+    let line_split = line_view.split_at(split_at).unwrap();
     Some(ParsedLine {
-        kmer: line,
+        kmer: line_split.0,
         present: present,
     })
 }
 
 pub struct InFile {
     pub position: PositionInfo,
-    reader: BufReader<File>,
+    file: Option<MmapView>,
     curr_line: Option<ParsedLine>,
 }
 
 impl InFile {
-    pub fn new(reader: BufReader<File>, position: PositionInfo) -> InFile {
+    pub unsafe fn new(mmap: Mmap, position: PositionInfo) -> InFile {
         let mut infile = InFile {
-            reader: reader,
+            file: Some(mmap.into_view()),
             curr_line: None,
             position: position,
         };
@@ -86,21 +93,28 @@ impl InFile {
     /// Advances the file, filline curr_line and returning the old one
     /// Will only return None if the file is finished
     /// In case of an error, the function will simply panic
-    pub fn advance(&mut self) -> Option<KmerState> {
+    pub unsafe fn advance(&mut self) -> Option<KmerState> {
         let prev_line = self.curr_line.take();
         loop {
-            let mut line = Vec::new();
-            self.reader.read_until(b'\n', &mut line).unwrap();
-            if line.is_empty() {
-                // Not even a newline, no data left in file.
-                // Leaves self.prev_line blank.
+            let file = match self.file.take() {
+                Some(f) => f,
+                None => break,
+            };
+            let newline_index = memchr(b'\n', file.as_slice());
+            let line = if let Some(newline_index) = newline_index {
+                let file_split = file.split_at(newline_index + 1).unwrap();
+                self.file = Some(file_split.1);
+                file_split.0
+            } else {
+                file
+            };
+            if line.len() == 0 {
                 break;
-            } else if line != b"\n" {
-                // Don't break if parse_line fails
-                if let Some(parsed_line) = parse_line(line) {
-                    self.curr_line = Some(parsed_line);
-                    break;
-                }
+            }
+            // Don't break if parse_line fails
+            if let Some(parsed_line) = parse_line(line) {
+                self.curr_line = Some(parsed_line);
+                break;
             }
         }
         return prev_line.map(|line| line.into_kmer_state(&self.position));
@@ -123,7 +137,7 @@ impl Ord for InFile {
                 match other.curr_line {
                     None => Ordering::Greater,
                     // Reverse comparison here is intentional
-                    Some(ref other_line) => other_line.kmer.cmp(&self_line.kmer),
+                    Some(ref other_line) => unsafe { other_line.kmer.as_slice().cmp(&self_line.kmer.as_slice()) },
                 }
             }
         }
@@ -148,7 +162,7 @@ impl PartialEq for InFile {
             Some(ref self_line) => {
                 match other.curr_line {
                     None => false,
-                    Some(ref other_line) => self_line.kmer.eq(&other_line.kmer),
+                    Some(ref other_line) => unsafe { self_line.kmer.as_slice().eq(other_line.kmer.as_slice()) },
                 }
             }
         }
