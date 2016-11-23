@@ -24,7 +24,7 @@ fn main() {
         return;
     }
     let file_count = infilenames.len();
-    println!("Kmer\t{}", infilenames.join("\t"));
+    println!("kmer\t{}", infilenames.join("\t"));
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
