@@ -3,11 +3,14 @@ use std::io;
 use std::io::Write;
 use std::io::BufReader;
 use std::fs::File;
-use std::env;
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+
+extern crate clap;
+use clap::App;
+use clap::Arg;
 
 mod infile;
 use infile::InFile;
@@ -15,32 +18,42 @@ use infile::InFile;
 fn main() {
     env_logger::init().unwrap();
 
-    let mut args = env::args();
-    args.next(); // Program path
+    let args = App::new("kmer-merger")
+        .arg(Arg::with_name("inputs")
+             .value_name("INPUTS")
+             .help("The list of input files")
+             .multiple(true)
+             .required_unless("inverted-inputs"))
+        .arg(Arg::with_name("inverted-inputs")
+             .short("i")
+             .long("inverted")
+             .value_name("INVERTED-INPUTS")
+             .help("The list of inverted input files (independent of INPUTS, usually placed afterwords)")
+             .multiple(true))
+        .get_matches();
 
-    let infilenames = args.collect::<Vec<_>>();
-    if infilenames.is_empty() {
-        error!("No input files specified (as arguments)");
-        return;
-    }
-    let file_count = infilenames.len();
+    let infilenames = args.values_of("inputs").unwrap().collect::<Vec<_>>();
+    let invertedfilenames = args.values_of("inverted-inputs").unwrap().collect::<Vec<_>>();
+    let file_count = infilenames.len() + invertedfilenames.len();
     println!("kmer\t{}", infilenames.join("\t"));
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
 
-    let mut infiles = infilenames.iter().enumerate()
-        .map(|(index, filename)| {
+    let mut infiles = infilenames.iter().map(|file| (file, false))
+        .chain(invertedfilenames.iter().map(|file| (file, true)))
+        .enumerate()
+        .map(|(index, (filename, inverted))| {
             let reader = File::open(filename)
                 .expect(format!("Could not open input file {}", filename).as_str());
-            InFile::new(BufReader::new(reader), infile::PositionInfo {
+            InFile::new(BufReader::new(reader), inverted, infile::PositionInfo {
                 index: index,
                 out_of: file_count,
             })
         })
     .collect::<BinaryHeap<_>>();
 
-    info!("Merging files: {}", infilenames.join(", "));
+    info!("Merging files: {}, inverted: {}", infilenames.join(", "), invertedfilenames.join(", "));
 
     let mut next_kmer = infiles.peek_mut().and_then(|mut file| file.advance());
     while let Some(mut curr_kmer) = next_kmer.take() {
