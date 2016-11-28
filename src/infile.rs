@@ -70,16 +70,14 @@ pub struct InFile {
     pub position: PositionInfo,
     reader: BufReader<File>,
     curr_line: Option<ParsedLine>,
-    inverted: bool,
 }
 
 impl InFile {
-    pub fn new(reader: BufReader<File>, inverted: bool, position: PositionInfo) -> InFile {
+    pub fn new(reader: BufReader<File>, position: PositionInfo) -> InFile {
         let mut infile = InFile {
             reader: reader,
             curr_line: None,
             position: position,
-            inverted: inverted,
         };
         infile.advance();
         infile
@@ -99,12 +97,7 @@ impl InFile {
                 break;
             } else if line != b"\n" {
                 // Don't break if parse_line fails
-                if let Some(mut parsed_line) = parse_line(line) {
-                    if self.inverted {
-                        // Probably optimized down to an XOR,
-                        // but this is easier to read.
-                        parsed_line.present = !parsed_line.present;
-                    }
+                if let Some(parsed_line) = parse_line(line) {
                     self.curr_line = Some(parsed_line);
                     break;
                 }

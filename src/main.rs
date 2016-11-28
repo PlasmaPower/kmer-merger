@@ -40,18 +40,20 @@ fn main() {
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
 
-    let mut infiles = infilenames.iter().map(|file| (file, false))
-        .chain(invertedfilenames.iter().map(|file| (file, true)))
+    let mut infiles = infilenames.iter().chain(invertedfilenames.iter())
         .enumerate()
-        .map(|(index, (filename, inverted))| {
+        .map(|(index, filename)| {
             let reader = File::open(filename)
                 .expect(format!("Could not open input file {}", filename).as_str());
-            InFile::new(BufReader::new(reader), inverted, infile::PositionInfo {
+            InFile::new(BufReader::new(reader), infile::PositionInfo {
                 index: index,
                 out_of: file_count,
             })
         })
     .collect::<BinaryHeap<_>>();
+    // We know that they will be ordered like this
+    // Used later for inverting the output
+    let inverted_files_start_index = infilenames.len();
 
     info!("Merging files: {}, inverted: {}", infilenames.join(", "), invertedfilenames.join(", "));
 
@@ -82,9 +84,9 @@ fn main() {
         }
         stdout.write(curr_kmer.kmer.as_slice()).unwrap();
         let mut present_fmt = Vec::with_capacity(curr_kmer.present.len() * 2 + 1);
-        for p in curr_kmer.present.iter() {
+        for (i, p) in curr_kmer.present.iter().enumerate() {
             present_fmt.push(b'\t');
-            present_fmt.push(if *p { b'1' } else { b'0' });
+            present_fmt.push(if *p ^ (i >= inverted_files_start_index) { b'1' } else { b'0' });
         }
         present_fmt.push(b'\n');
         stdout.write(present_fmt.as_slice()).unwrap();
