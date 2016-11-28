@@ -55,22 +55,27 @@ fn main() {
 
     info!("Merging files: {}, inverted: {}", infilenames.join(", "), invertedfilenames.join(", "));
 
-    let mut next_kmer = infiles.peek_mut().and_then(|mut file| file.advance());
+    let mut next_kmer = infiles.peek_mut().and_then(|mut file| {
+        file.advance().map(|line| line.into_kmer_state(&file.position))
+    });
     while let Some(mut curr_kmer) = next_kmer.take() {
         while let Some(mut infile) = infiles.pop() {
             let index = infile.position.index;
             if let Some(read_kmer) = infile.advance() {
-                infiles.push(infile);
                 // We check this in reverse because the elements are close together.
                 // That means that their starts will very likely be equal, but their
                 // endings will very likely not be equal.
                 // Note: this computation has actually been done before when
                 // the element is inserted into the BinaryHeap. This might be
                 // a small future optimization.
-                if read_kmer.kmer.iter().rev().eq(curr_kmer.kmer.iter().rev()) {
-                    curr_kmer.present[index] = true;
+                let next_equal = read_kmer.kmer.iter().rev().eq(curr_kmer.kmer.iter().rev());
+                if next_equal {
+                    curr_kmer.present[index] = read_kmer.present;
                 } else {
-                    next_kmer = Some(read_kmer);
+                    next_kmer = Some(read_kmer.into_kmer_state(&infile.position));
+                }
+                infiles.push(infile);
+                if !next_equal {
                     break;
                 }
             }

@@ -13,13 +13,13 @@ pub struct KmerState {
     pub present: Vec<bool>,
 }
 
-struct ParsedLine {
-    kmer: Vec<u8>,
-    present: bool,
+pub struct ParsedLine {
+    pub kmer: Vec<u8>,
+    pub present: bool,
 }
 
 impl ParsedLine {
-    fn into_kmer_state(self, position: &PositionInfo) -> KmerState {
+    pub fn into_kmer_state(self, position: &PositionInfo) -> KmerState {
         let mut present_array = Vec::with_capacity(position.out_of);
         for i in 0..position.out_of {
             present_array.push(if i == position.index {
@@ -88,7 +88,7 @@ impl InFile {
     /// Advances the file, filline curr_line and returning the old one
     /// Will only return None if the file is finished
     /// In case of an error, the function will simply panic
-    pub fn advance(&mut self) -> Option<KmerState> {
+    pub fn advance(&mut self) -> Option<ParsedLine> {
         let prev_line = self.curr_line.take();
         loop {
             let mut line = Vec::new();
@@ -110,7 +110,7 @@ impl InFile {
                 }
             }
         }
-        return prev_line.map(|line| line.into_kmer_state(&self.position));
+        prev_line
     }
 }
 
