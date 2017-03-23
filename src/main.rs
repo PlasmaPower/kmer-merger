@@ -33,7 +33,7 @@ fn main() {
         .get_matches();
 
     let infilenames = args.values_of("inputs").unwrap().collect::<Vec<_>>();
-    let invertedfilenames = args.values_of("inverted-inputs").unwrap().collect::<Vec<_>>();
+    let invertedfilenames = args.values_of("inverted-inputs").map(|i| i.collect()).unwrap_or_else(Vec::new);
     let file_count = infilenames.len() + invertedfilenames.len();
     println!("kmer\t{}\t{}", infilenames.join("\t"), invertedfilenames.join("\t"));
 
