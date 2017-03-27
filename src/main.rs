@@ -35,7 +35,16 @@ fn main() {
     let infilenames = args.values_of("inputs").unwrap().collect::<Vec<_>>();
     let invertedfilenames = args.values_of("inverted-inputs").map(|i| i.collect()).unwrap_or_else(Vec::new);
     let file_count = infilenames.len() + invertedfilenames.len();
-    println!("kmer\t{}\t{}", infilenames.join("\t"), invertedfilenames.join("\t"));
+    let mut header = "kmer".to_string();
+    for file in &infilenames {
+        header += "\t";
+        header += file;
+    }
+    for file in &invertedfilenames {
+        header += "\t";
+        header += file;
+    }
+    println!("{}", header);
 
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
